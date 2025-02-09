@@ -34,27 +34,32 @@ func main() {
 
 	bot, err := tgbotapi.NewBotAPI(telegramToken)
 	if err != nil {
-		log.Error("Failed to initialize Telegram bot: %v", err)
+		log.Error("Failed to initialize Telegram bot.", "error", err)
 		os.Exit(1)
 	}
 
-	file, err := os.OpenFile("db.json", os.O_RDWR|os.O_CREATE, 0644)
+	fileName := os.Getenv("STORAGE_FILE")
+	if fileName == "" {
+		fileName = "db.json"
+	}
+
+	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		log.Error("Failed to open storage file: %v", err)
+		log.Error("Failed to open storage file.", "error", err)
 		os.Exit(1)
 	}
 	defer file.Close()
 
 	store, err := storage.Load[monitor.MonitoringRequest](file)
 	if err != nil {
-		log.Error("Failed to initialize storage: %v", err)
+		log.Error("Failed to initialize storage.", "error", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
 	baseURL, err := url.Parse("https://api.nvidia.partners")
 	if err != nil {
-		log.Error("Failed to parse base URL: %v", err)
+		log.Error("Failed to parse base URL.", "error", err)
 		os.Exit(1)
 	}
 
@@ -71,7 +76,7 @@ func main() {
 
 	updatesCh, err := bot.GetUpdatesChan(tgbotapi.NewUpdate(0))
 	if err != nil {
-		log.Error("Failed to get updates: %v", err)
+		log.Error("Failed to get updates.", "error", err)
 		os.Exit(1)
 	}
 
@@ -108,7 +113,7 @@ func main() {
 			)
 
 			if _, err := bot.Send(msg); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 		}
 	}()
@@ -123,7 +128,7 @@ func main() {
 
 		if text == "/start" {
 			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Welcome! Use /monitor to track product availability.")); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			continue
@@ -134,7 +139,7 @@ func main() {
 			msg.ReplyMarkup = selection(availableProducts, "Confirm Products")
 
 			if _, err := bot.Send(msg); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			userSelections[userID] = struct {
@@ -150,7 +155,7 @@ func main() {
 			msg.ReplyMarkup = selection(availableCountries, "Confirm Countries")
 
 			if _, err := bot.Send(msg); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			continue
@@ -167,7 +172,7 @@ func main() {
 			msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 
 			if _, err := bot.Send(msg); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			delete(userSelections, userID)
@@ -181,7 +186,7 @@ func main() {
 			userSelections[userID] = selection
 
 			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected product: %s", text))); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			continue
@@ -193,7 +198,7 @@ func main() {
 			userSelections[userID] = selection
 
 			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected country: %s", text))); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			continue
@@ -203,14 +208,14 @@ func main() {
 			mon.Unmonitor(fmt.Sprintf("%d", userID))
 
 			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Monitoring stopped.")); err != nil {
-				log.Error("Failed to send message: %v", err)
+				log.Error("Failed to send message.", "error", err)
 			}
 
 			continue
 		}
 
 		if _, err := bot.Send(tgbotapi.NewMessage(userID, "Unknown command. Use /monitor or /unmonitor.")); err != nil {
-			log.Error("Failed to send message: %v", err)
+			log.Error("Failed to send message.", "error", err)
 		}
 	}
 }
