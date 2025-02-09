@@ -1,0 +1,227 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"net/url"
+	"os"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/diptanw/rtx-sniper-bot/async"
+	"github.com/diptanw/rtx-sniper-bot/monitor"
+	"github.com/diptanw/rtx-sniper-bot/nvidia"
+	"github.com/diptanw/rtx-sniper-bot/storage"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+)
+
+const (
+	interval = 10 * time.Second
+	workers  = 1
+)
+
+func main() {
+	log := slog.Default()
+
+	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if telegramToken == "" {
+		log.Error("Telegram token not found in environment variables")
+		os.Exit(1)
+	}
+
+	bot, err := tgbotapi.NewBotAPI(telegramToken)
+	if err != nil {
+		log.Error("Failed to initialize Telegram bot: %v", err)
+		os.Exit(1)
+	}
+
+	file, err := os.OpenFile("db.json", os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Error("Failed to open storage file: %v", err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	store, err := storage.Load[monitor.MonitoringRequest](file)
+	if err != nil {
+		log.Error("Failed to initialize storage: %v", err)
+		os.Exit(1)
+	}
+	defer store.Close()
+
+	baseURL, err := url.Parse("https://api.nvidia.partners")
+	if err != nil {
+		log.Error("Failed to parse base URL: %v", err)
+		os.Exit(1)
+	}
+
+	notificationCh := make(chan monitor.Notification)
+	defer close(notificationCh)
+
+	apiClient := nvidia.NewClient(baseURL)
+	mon := monitor.NewMonitor(log, store, async.NewScheduler(log), async.NewPool(), apiClient, notificationCh)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	mon.Start(ctx, interval, workers)
+
+	updatesCh, err := bot.GetUpdatesChan(tgbotapi.NewUpdate(0))
+	if err != nil {
+		log.Error("Failed to get updates: %v", err)
+		os.Exit(1)
+	}
+
+	var (
+		availableProducts = []string{
+			string(nvidia.ProductRTX5080),
+			string(nvidia.ProductRTX5090),
+		}
+		availableCountries = []string{
+			string(nvidia.CountrySweden),
+			string(nvidia.CountryDenmark),
+			string(nvidia.CountryNorway),
+			string(nvidia.CountryFinland),
+			string(nvidia.CountryGermany),
+			string(nvidia.CountryNetherlands),
+		}
+		userSelections = make(map[int64]struct {
+			Products  []string
+			Countries []string
+		})
+	)
+
+	go func() {
+		for notif := range notificationCh {
+			var buttons []tgbotapi.InlineKeyboardButton
+
+			for name, u := range notif.URL {
+				buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonURL(name, u))
+			}
+
+			msg := tgbotapi.NewMessage(notif.UserID, notif.Message)
+			msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+				tgbotapi.NewInlineKeyboardRow(buttons...),
+			)
+
+			if _, err := bot.Send(msg); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+		}
+	}()
+
+	for update := range updatesCh {
+		if update.Message == nil {
+			continue
+		}
+
+		userID := update.Message.Chat.ID
+		text := update.Message.Text
+
+		if text == "/start" {
+			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Welcome! Use /monitor to track product availability.")); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			continue
+		}
+
+		if text == "/monitor" {
+			msg := tgbotapi.NewMessage(userID, "Select products:")
+			msg.ReplyMarkup = selection(availableProducts, "Confirm Products")
+
+			if _, err := bot.Send(msg); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			userSelections[userID] = struct {
+				Products  []string
+				Countries []string
+			}{}
+
+			continue
+		}
+
+		if text == "Confirm Products" && len(userSelections[userID].Products) > 0 {
+			msg := tgbotapi.NewMessage(userID, "Select countries:")
+			msg.ReplyMarkup = selection(availableCountries, "Confirm Countries")
+
+			if _, err := bot.Send(msg); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			continue
+		}
+
+		if text == "Confirm Countries" && len(userSelections[userID].Countries) > 0 {
+			selection := userSelections[userID]
+			mon.Monitor(fmt.Sprintf("%d", userID), selection.Products, selection.Countries)
+
+			msg := tgbotapi.NewMessage(userID, fmt.Sprintf("Monitoring started for %s in %s. /unmonitor to stop",
+				strings.Join(selection.Products, ", "),
+				strings.Join(selection.Countries, ", "),
+			))
+			msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+
+			if _, err := bot.Send(msg); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			delete(userSelections, userID)
+
+			continue
+		}
+
+		if slices.Contains(availableProducts, text) {
+			selection := userSelections[userID]
+			selection.Products = append(selection.Products, text)
+			userSelections[userID] = selection
+
+			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected product: %s", text))); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			continue
+		}
+
+		if slices.Contains(availableCountries, text) {
+			selection := userSelections[userID]
+			selection.Countries = append(selection.Countries, text)
+			userSelections[userID] = selection
+
+			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected country: %s", text))); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			continue
+		}
+
+		if text == "/unmonitor" {
+			mon.Unmonitor(fmt.Sprintf("%d", userID))
+
+			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Monitoring stopped.")); err != nil {
+				log.Error("Failed to send message: %v", err)
+			}
+
+			continue
+		}
+
+		if _, err := bot.Send(tgbotapi.NewMessage(userID, "Unknown command. Use /monitor or /unmonitor.")); err != nil {
+			log.Error("Failed to send message: %v", err)
+		}
+	}
+}
+
+func selection(opts []string, confirmText string) tgbotapi.ReplyKeyboardMarkup {
+	var rows [][]tgbotapi.KeyboardButton
+
+	for _, option := range opts {
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(option)))
+	}
+
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(confirmText)))
+	return tgbotapi.NewReplyKeyboard(rows...)
+}
