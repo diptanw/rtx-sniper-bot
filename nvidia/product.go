@@ -16,23 +16,36 @@ func (p Product) SKU(c Country) string {
 		case ProductRTX5080:
 			return "1147624"
 		case ProductRTX5090:
-			return ""
+			return "1147625"
 		}
 	case CountryDenmark:
-		return ""
-	case CountryNorway:
-		return ""
+		switch p {
+		case ProductRTX5080:
+			return "1145786"
+		case ProductRTX5090:
+			return "1145785"
+		}
 	case CountryFinland:
-		return ""
+		switch p {
+		case ProductRTX5080:
+			return "1147557"
+		case ProductRTX5090:
+			return "1147616"
+		}
 	case CountryGermany:
 		switch p {
 		case ProductRTX5080:
-			return "307545" // 1145548
+			return "1145548"
 		case ProductRTX5090:
-			return ""
+			return "1145543"
 		}
 	case CountryNetherlands:
-		return ""
+		switch p {
+		case ProductRTX5080:
+			return "1147627"
+		case ProductRTX5090:
+			return "1147626"
+		}
 	}
 
 	return ""

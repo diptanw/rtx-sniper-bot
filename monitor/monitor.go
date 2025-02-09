@@ -32,7 +32,7 @@ type (
 	Notification struct {
 		UserID  int64
 		Message string
-		URL     map[string]string
+		URLs    map[string]string
 	}
 
 	sku struct {
@@ -117,7 +117,7 @@ func (m *Monitor) checkStock(ctx context.Context, sku sku) {
 		m.notCh <- Notification{
 			UserID:  userID,
 			Message: "Product " + sku.prod.String() + " is now available! Use /monitor to subscribe again.",
-			URL:     links,
+			URLs:    links,
 		}
 
 		m.Unmonitor(strconv.FormatInt(userID, 10))

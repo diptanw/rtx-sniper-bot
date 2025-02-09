@@ -107,7 +107,6 @@ func main() {
 		availableCountries = []string{
 			string(nvidia.CountrySweden),
 			string(nvidia.CountryDenmark),
-			string(nvidia.CountryNorway),
 			string(nvidia.CountryFinland),
 			string(nvidia.CountryGermany),
 			string(nvidia.CountryNetherlands),
@@ -120,9 +119,9 @@ func main() {
 
 	go func() {
 		for notif := range notificationCh {
-			var buttons []tgbotapi.InlineKeyboardButton
+			buttons := make([]tgbotapi.InlineKeyboardButton, 0, len(notif.URLs))
 
-			for name, u := range notif.URL {
+			for name, u := range notif.URLs {
 				buttons = append(buttons, tgbotapi.NewInlineKeyboardButtonURL(name, u))
 			}
 
