@@ -2,7 +2,9 @@ package monitor
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -57,11 +59,31 @@ func NewMonitor(log *slog.Logger, store *storage.Storage[MonitoringRequest], sch
 func (m *Monitor) Start(ctx context.Context, interval time.Duration, workers int) {
 	m.scheduler.Schedule(ctx, interval, func(ctx context.Context) error {
 		m.updateActiveSKUs()
+
 		for _, sku := range m.activeSKUs {
-			m.pool.Enqueue(func(ctx context.Context) error {
-				m.checkStock(ctx, sku)
-				return nil
-			})
+			go func(ctx context.Context) {
+				jitterDelay := time.Duration(rand.Int63n(int64(interval)))
+
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(jitterDelay):
+					m.pool.Enqueue(func(ctx context.Context) error {
+						err := m.checkStock(ctx, sku)
+						if errors.Is(err, nvidia.ErrNotAvailable) {
+							m.log.Debug("Product not available.", "product", sku.prod, "country", sku.country)
+
+							return nil
+						}
+
+						if err != nil {
+							m.log.Error("Failed to get buy now links.", "product", sku.prod, "country", sku.country, "error", err)
+						}
+
+						return nil
+					})
+				}
+			}(ctx)
 		}
 		return nil
 	})
@@ -102,15 +124,10 @@ func (m *Monitor) updateActiveSKUs() {
 	}
 }
 
-func (m *Monitor) checkStock(ctx context.Context, sku sku) {
+func (m *Monitor) checkStock(ctx context.Context, sku sku) error {
 	links, err := m.api.BuyNow(ctx, sku.prod, sku.country)
-	if err == nvidia.ErrNotAvailable {
-		return
-	}
-
 	if err != nil {
-		m.log.Error("Failed to get buy now links.", "product", sku.prod, "country", sku.country, "error", err)
-		return
+		return err
 	}
 
 	for _, userID := range sku.users {
@@ -122,6 +139,8 @@ func (m *Monitor) checkStock(ctx context.Context, sku sku) {
 
 		m.Unmonitor(strconv.FormatInt(userID, 10))
 	}
+
+	return nil
 }
 
 func (m *Monitor) Monitor(userID string, products []string, countries []string) {

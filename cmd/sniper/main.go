@@ -22,6 +22,10 @@ import (
 func main() {
 	log := slog.Default()
 
+	if os.Getenv("DEBUG") == "true" {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+	}
+
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	if telegramToken == "" {
 		log.Error("TELEGRAM_BOT_TOKEN is not setN")
@@ -35,7 +39,7 @@ func main() {
 
 	intervalStr := os.Getenv("UPDATE_INTERVAL")
 	if intervalStr == "" {
-		intervalStr = "30s"
+		intervalStr = "60s"
 	}
 
 	workersStr := os.Getenv("WORKERS")
@@ -154,7 +158,7 @@ func main() {
 
 		if text == "/monitor" {
 			msg := tgbotapi.NewMessage(userID, "Select products:")
-			msg.ReplyMarkup = selection(availableProducts, "Confirm Products")
+			msg.ReplyMarkup = selection(availableProducts, userSelections[userID].Products, "Confirm Products")
 
 			if _, err := bot.Send(msg); err != nil {
 				log.Error("Failed to send message.", "error", err)
@@ -170,7 +174,7 @@ func main() {
 
 		if text == "Confirm Products" && len(userSelections[userID].Products) > 0 {
 			msg := tgbotapi.NewMessage(userID, "Select countries:")
-			msg.ReplyMarkup = selection(availableCountries, "Confirm Countries")
+			msg.ReplyMarkup = selection(availableCountries, nil, "Confirm Countries")
 
 			if _, err := bot.Send(msg); err != nil {
 				log.Error("Failed to send message.", "error", err)
@@ -180,12 +184,12 @@ func main() {
 		}
 
 		if text == "Confirm Countries" && len(userSelections[userID].Countries) > 0 {
-			selection := userSelections[userID]
-			mon.Monitor(fmt.Sprintf("%d", userID), selection.Products, selection.Countries)
+			sel := userSelections[userID]
+			mon.Monitor(fmt.Sprintf("%d", userID), sel.Products, sel.Countries)
 
 			msg := tgbotapi.NewMessage(userID, fmt.Sprintf("Monitoring started for %s in %s. /unmonitor to stop",
-				strings.Join(selection.Products, ", "),
-				strings.Join(selection.Countries, ", "),
+				strings.Join(sel.Products, ", "),
+				strings.Join(sel.Countries, ", "),
 			))
 			msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
 
@@ -193,18 +197,26 @@ func main() {
 				log.Error("Failed to send message.", "error", err)
 			}
 
-			log.Info("New monitor added", "userID", userID, "products", selection.Products, "countries", selection.Countries)
+			log.Info("New monitor added", "userID", userID, "products", sel.Products, "countries", sel.Countries)
 			delete(userSelections, userID)
 
 			continue
 		}
 
 		if slices.Contains(availableProducts, text) {
-			selection := userSelections[userID]
-			selection.Products = append(selection.Products, text)
-			userSelections[userID] = selection
+			sel := userSelections[userID]
 
-			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected product: %s", text))); err != nil {
+			// Avoid duplicate selection
+			if !slices.Contains(sel.Products, text) {
+				sel.Products = append(sel.Products, text)
+				userSelections[userID] = sel
+			}
+
+			// Send updated menu with remaining options
+			msg := tgbotapi.NewMessage(userID, fmt.Sprintf("Selected product: %s", text))
+			msg.ReplyMarkup = selection(availableProducts, sel.Products, "Confirm Products")
+
+			if _, err := bot.Send(msg); err != nil {
 				log.Error("Failed to send message.", "error", err)
 			}
 
@@ -212,11 +224,19 @@ func main() {
 		}
 
 		if slices.Contains(availableCountries, text) {
-			selection := userSelections[userID]
-			selection.Countries = append(selection.Countries, text)
-			userSelections[userID] = selection
+			sel := userSelections[userID]
 
-			if _, err := bot.Send(tgbotapi.NewMessage(userID, fmt.Sprintf("Selected country: %s", text))); err != nil {
+			// Avoid duplicate selection
+			if !slices.Contains(sel.Countries, text) {
+				sel.Countries = append(sel.Countries, text)
+				userSelections[userID] = sel
+			}
+
+			// Send updated menu with remaining options
+			msg := tgbotapi.NewMessage(userID, fmt.Sprintf("Selected country: %s", text))
+			msg.ReplyMarkup = selection(availableCountries, sel.Countries, "Confirm Countries")
+
+			if _, err := bot.Send(msg); err != nil {
 				log.Error("Failed to send message.", "error", err)
 			}
 
@@ -240,13 +260,25 @@ func main() {
 	}
 }
 
-func selection(opts []string, confirmText string) tgbotapi.ReplyKeyboardMarkup {
-	var rows [][]tgbotapi.KeyboardButton
+func selection(opts []string, selected []string, confirmText string) tgbotapi.ReplyKeyboardMarkup {
+	var (
+		rows         [][]tgbotapi.KeyboardButton
+		filteredOpts []string
+	)
 
-	for _, option := range opts {
+	for _, opt := range opts {
+		if !slices.Contains(selected, opt) {
+			filteredOpts = append(filteredOpts, opt)
+		}
+	}
+
+	for _, option := range filteredOpts {
 		rows = append(rows, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(option)))
 	}
 
-	rows = append(rows, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(confirmText)))
+	if len(selected) > 0 {
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton(confirmText)))
+	}
+
 	return tgbotapi.NewReplyKeyboard(rows...)
 }
