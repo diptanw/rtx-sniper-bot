@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -62,30 +61,38 @@ func (m *Monitor) Start(ctx context.Context, interval time.Duration, workers int
 	m.scheduler.Schedule(ctx, interval, func(ctx context.Context) error {
 		m.updateActiveSKUs()
 
-		for _, sku := range m.activeSKUs {
-			go func(ctx context.Context) {
-				jitterDelay := time.Duration(rand.Int63n(int64(interval)))
+		numSKUs := len(m.activeSKUs)
+		if numSKUs == 0 {
+			return nil
+		}
 
+		delay := interval / time.Duration(numSKUs)
+
+		var count int
+
+		for _, s := range m.activeSKUs {
+			count++
+
+			go func(ctx context.Context, s sku, delay time.Duration) {
 				select {
 				case <-ctx.Done():
 					return
-				case <-time.After(jitterDelay):
+				case <-time.After(delay):
 					m.pool.Enqueue(func(ctx context.Context) error {
-						err := m.checkStock(ctx, sku)
+						err := m.checkStock(ctx, s)
 						if errors.Is(err, ErrNotAvailable) {
-							m.log.Debug("Product not available.", "product", sku.prod, "country", sku.country)
-
+							m.log.Debug("Product not available.", "product", s.prod, "country", s.country)
 							return nil
 						}
 
 						if err != nil {
-							m.log.Error("Failed to get buy now links.", "product", sku.prod, "country", sku.country, "error", err)
+							m.log.Error("Failed to get buy now links.", "product", s.prod, "country", s.country, "error", err)
 						}
 
 						return nil
 					})
 				}
-			}(ctx)
+			}(ctx, s, delay*time.Duration(count))
 		}
 		return nil
 	})
@@ -113,7 +120,6 @@ func (m *Monitor) updateActiveSKUs() {
 				skuCode := sku.prod.SKU(sku.country)
 				if skuCode == "" {
 					m.log.Warn("No SKU code found.", "product", sku.prod, "country", sku.country)
-
 					continue
 				}
 
@@ -169,7 +175,6 @@ func (m *Monitor) Monitor(userID string, products []string, countries []string) 
 		Countries: countries,
 	}); err != nil {
 		m.log.Error("Failed to add user to store.", "error", err)
-
 		return
 	}
 
@@ -179,7 +184,6 @@ func (m *Monitor) Monitor(userID string, products []string, countries []string) 
 func (m *Monitor) Unmonitor(userID string) {
 	if err := m.store.Remove(userID); err != nil {
 		m.log.Error("Failed to remove user from store.", "error", err)
-
 		return
 	}
 
