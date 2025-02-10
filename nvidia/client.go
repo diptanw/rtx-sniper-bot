@@ -98,3 +98,9 @@ func (c *Client) BuyNow(ctx context.Context, prod Product, country Country) ([]S
 
 	return stockData, nil
 }
+
+func WithHTTPClient(client *http.Client) Option {
+	return func(c *Client) {
+		c.client = client
+	}
+}

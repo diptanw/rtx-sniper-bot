@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"slices"
@@ -14,10 +15,19 @@ import (
 	"github.com/diptanw/rtx-sniper-bot/async"
 	"github.com/diptanw/rtx-sniper-bot/monitor"
 	"github.com/diptanw/rtx-sniper-bot/nvidia"
+	"github.com/diptanw/rtx-sniper-bot/proxy"
 	"github.com/diptanw/rtx-sniper-bot/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
+
+type config struct {
+	TelegramToken  string
+	StorageFile    string
+	UpdateInterval time.Duration
+	Workers        int
+	ProxyServers   []string
+}
 
 func main() {
 	log := slog.Default()
@@ -26,38 +36,38 @@ func main() {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
 	}
 
-	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
-	if telegramToken == "" {
-		log.Error("TELEGRAM_BOT_TOKEN is not setN")
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Error("Failed to load configuration.", "error", err)
 		os.Exit(1)
 	}
 
-	fileName := os.Getenv("STORAGE_FILE")
-	if fileName == "" {
-		fileName = "db.json"
+	httpClient := http.DefaultClient
+
+	if len(cfg.ProxyServers) > 0 {
+		proxyTransport, err := proxy.NewRotatingTransport(cfg.ProxyServers)
+		if err != nil {
+			log.Error("Failed to initialize proxy transport.", "error", err)
+			os.Exit(1)
+		}
+
+		httpClient = &http.Client{
+			Transport: proxyTransport,
+		}
 	}
 
-	intervalStr := os.Getenv("UPDATE_INTERVAL")
-	if intervalStr == "" {
-		intervalStr = "60s"
-	}
-
-	workersStr := os.Getenv("WORKERS")
-	if workersStr == "" {
-		workersStr = "1"
-	}
-
-	bot, err := tgbotapi.NewBotAPI(telegramToken)
+	bot, err := tgbotapi.NewBotAPI(cfg.TelegramToken)
 	if err != nil {
 		log.Error("Failed to initialize Telegram bot.", "error", err)
 		os.Exit(1)
 	}
 
-	file, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
+	file, err := os.OpenFile(cfg.StorageFile, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Error("Failed to open storage file.", "error", err)
 		os.Exit(1)
 	}
+
 	defer file.Close()
 
 	store, err := storage.Load[monitor.Request](file)
@@ -76,26 +86,14 @@ func main() {
 	notificationCh := make(chan monitor.Notification)
 	defer close(notificationCh)
 
-	apiClient := nvidia.NewClient(baseURL)
+	apiClient := nvidia.NewClient(baseURL, nvidia.WithHTTPClient(httpClient))
 	mon := monitor.New(log, store, async.NewScheduler(log), async.NewPool(), apiClient, notificationCh)
-
-	interval, err := time.ParseDuration(intervalStr)
-	if err != nil {
-		log.Error("Failed to parse update interval.", "error", err)
-		os.Exit(1)
-	}
-
-	workers, err := strconv.Atoi(workersStr)
-	if err != nil {
-		log.Error("Failed to parse number of workers.", "error", err)
-		os.Exit(1)
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mon.Start(ctx, interval, workers)
-	log.Info("Monitoring service started", "interval", interval, "workers", workers)
+	mon.Start(ctx, cfg.UpdateInterval, cfg.Workers)
+	log.Info("Monitoring service started", "interval", cfg.UpdateInterval, "workers", cfg.Workers)
 
 	updatesCh, err := bot.GetUpdatesChan(tgbotapi.NewUpdate(0))
 	if err != nil {
@@ -281,4 +279,46 @@ func selection(opts []string, selected []string, confirmText string) tgbotapi.Re
 	}
 
 	return tgbotapi.NewReplyKeyboard(rows...)
+}
+
+func loadConfig() (*config, error) {
+	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
+	if telegramToken == "" {
+		return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN is not set")
+	}
+
+	storageFile := os.Getenv("STORAGE_FILE")
+	if storageFile == "" {
+		storageFile = "db.json"
+	}
+
+	intervalStr := os.Getenv("UPDATE_INTERVAL")
+	if intervalStr == "" {
+		intervalStr = "60s"
+	}
+
+	updateInterval, err := time.ParseDuration(intervalStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse UPDATE_INTERVAL: %w", err)
+	}
+
+	workersStr := os.Getenv("WORKERS")
+	if workersStr == "" {
+		workersStr = "1"
+	}
+
+	workers, err := strconv.Atoi(workersStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse WORKERS: %w", err)
+	}
+
+	proxyServers := strings.Split(os.Getenv("PROXY_SERVERS"), ",")
+
+	return &config{
+		TelegramToken:  telegramToken,
+		StorageFile:    storageFile,
+		UpdateInterval: updateInterval,
+		Workers:        workers,
+		ProxyServers:   proxyServers,
+	}, nil
 }

@@ -35,11 +35,10 @@ services:
   rtx-sniper-bot:
     image: docker.io/diptanw/rtx-sniper-bot:latest
     environment:
-      - TELEGRAM_BOT_TOKEN: your_telegram_bot_token
-      - STORAGE_FILE: /db.json
-      - DEBUG: false
-    ports:
-      - "8080:8080"
+      TELEGRAM_BOT_TOKEN: your_telegram_bot_token
+      STORAGE_FILE: /db.json
+      DEBUG: false
+      PROXY_SERVERS: http://172.0.0.1:8388
     volumes:
       - ./db.json:/root/db.json
     restart: always
