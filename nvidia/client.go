@@ -3,15 +3,11 @@ package nvidia
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
-)
-
-var (
-	ErrNotAvailable = errors.New("product not available")
 )
 
 type (
@@ -48,7 +44,7 @@ func NewClient(baseURL *url.URL, opts ...Option) *Client {
 	return &c
 }
 
-func (c *Client) BuyNow(ctx context.Context, prod Product, country Country) (map[string]string, error) {
+func (c *Client) BuyNow(ctx context.Context, prod Product, country Country) ([]StockResponse, error) {
 	params := make(url.Values)
 
 	params.Set("sku", prod.SKU(country))
@@ -80,6 +76,10 @@ func (c *Client) BuyNow(ctx context.Context, prod Product, country Country) (map
 
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetching stock data: %w", err)
+	}
+
 	var stockData []StockResponse
 
 	body, err := io.ReadAll(resp.Body)
@@ -92,27 +92,9 @@ func (c *Client) BuyNow(ctx context.Context, prod Product, country Country) (map
 		return nil, err
 	}
 
-	if err := json.Unmarshal([]byte(unescaped), &stockData); err != nil || len(stockData) == 0 {
+	if err := json.Unmarshal([]byte(unescaped), &stockData); err != nil {
 		return nil, err
 	}
 
-	const (
-		nvidiaID      = "111"
-		nvidiaStoreID = "9595"
-	)
-
-	links := make(map[string]string)
-
-	for _, item := range stockData {
-		// Needs to be other than Nvidia partner and store.
-		if item.PartnerID != nvidiaID && item.StoreID != nvidiaStoreID {
-			links[item.RetailerName] = item.DirectPurchaseLink
-		}
-	}
-
-	if len(links) == 0 {
-		return nil, ErrNotAvailable
-	}
-
-	return links, nil
+	return stockData, nil
 }

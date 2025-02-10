@@ -14,14 +14,16 @@ import (
 	"github.com/diptanw/rtx-sniper-bot/storage"
 )
 
+var ErrNotAvailable = errors.New("product not available")
+
 type (
-	MonitoringRequest struct {
+	Request struct {
 		Products  []string `json:"products"`
 		Countries []string `json:"countries"`
 	}
 
 	Monitor struct {
-		store       *storage.Storage[MonitoringRequest]
+		store       *storage.Storage[Request]
 		scheduler   *async.Scheduler
 		pool        async.Pool
 		api         *nvidia.Client
@@ -44,7 +46,7 @@ type (
 	}
 )
 
-func NewMonitor(log *slog.Logger, store *storage.Storage[MonitoringRequest], sch *async.Scheduler, pool async.Pool, api *nvidia.Client, notCh chan<- Notification) *Monitor {
+func New(log *slog.Logger, store *storage.Storage[Request], sch *async.Scheduler, pool async.Pool, api *nvidia.Client, notCh chan<- Notification) *Monitor {
 	return &Monitor{
 		store:      store,
 		scheduler:  sch,
@@ -70,7 +72,7 @@ func (m *Monitor) Start(ctx context.Context, interval time.Duration, workers int
 				case <-time.After(jitterDelay):
 					m.pool.Enqueue(func(ctx context.Context) error {
 						err := m.checkStock(ctx, sku)
-						if errors.Is(err, nvidia.ErrNotAvailable) {
+						if errors.Is(err, ErrNotAvailable) {
 							m.log.Debug("Product not available.", "product", sku.prod, "country", sku.country)
 
 							return nil
@@ -125,9 +127,27 @@ func (m *Monitor) updateActiveSKUs() {
 }
 
 func (m *Monitor) checkStock(ctx context.Context, sku sku) error {
-	links, err := m.api.BuyNow(ctx, sku.prod, sku.country)
+	stocks, err := m.api.BuyNow(ctx, sku.prod, sku.country)
 	if err != nil {
 		return err
+	}
+
+	const (
+		nvidiaID      = "111"
+		nvidiaStoreID = "9595"
+	)
+
+	links := make(map[string]string)
+
+	for _, s := range stocks {
+		// Needs to be other than Nvidia partner and store.
+		if s.PartnerID != nvidiaID && s.StoreID != nvidiaStoreID {
+			links[s.RetailerName] = s.DirectPurchaseLink
+		}
+	}
+
+	if len(links) == 0 {
+		return ErrNotAvailable
 	}
 
 	for _, userID := range sku.users {
@@ -144,15 +164,24 @@ func (m *Monitor) checkStock(ctx context.Context, sku sku) error {
 }
 
 func (m *Monitor) Monitor(userID string, products []string, countries []string) {
-	m.store.Add(userID, MonitoringRequest{
+	if err := m.store.Add(userID, Request{
 		Products:  products,
 		Countries: countries,
-	})
+	}); err != nil {
+		m.log.Error("Failed to add user to store.", "error", err)
+
+		return
+	}
 
 	m.updateActiveSKUs()
 }
 
 func (m *Monitor) Unmonitor(userID string) {
-	m.store.Remove(userID)
+	if err := m.store.Remove(userID); err != nil {
+		m.log.Error("Failed to remove user from store.", "error", err)
+
+		return
+	}
+
 	m.updateActiveSKUs()
 }

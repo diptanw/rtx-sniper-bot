@@ -1,8 +1,8 @@
 # RTX Sniper Bot
 
-RTX Sniper Bot is a Go-based bot backend designed to monitor the availability of NVIDIA RTX graphics cards across various countries and notify users via Telegram when the products become available.
+RTX Sniper is a Go-based bot backend designed to monitor the availability of NVIDIA RTX graphics cards across various countries and notify users via Telegram when the products become available.
 
-Bot can be found in Telegram as [@RTXSniperBot](https://t.me/RTXSniperBot)
+Find it on Telegram as [@RTXSniperBot](https://t.me/RTXSniperBot)
 
 ## Features
 

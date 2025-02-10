@@ -60,7 +60,7 @@ func main() {
 	}
 	defer file.Close()
 
-	store, err := storage.Load[monitor.MonitoringRequest](file)
+	store, err := storage.Load[monitor.Request](file)
 	if err != nil {
 		log.Error("Failed to initialize storage.", "error", err)
 		os.Exit(1)
@@ -77,7 +77,7 @@ func main() {
 	defer close(notificationCh)
 
 	apiClient := nvidia.NewClient(baseURL)
-	mon := monitor.NewMonitor(log, store, async.NewScheduler(log), async.NewPool(), apiClient, notificationCh)
+	mon := monitor.New(log, store, async.NewScheduler(log), async.NewPool(), apiClient, notificationCh)
 
 	interval, err := time.ParseDuration(intervalStr)
 	if err != nil {
