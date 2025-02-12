@@ -244,7 +244,7 @@ func main() {
 		if text == "/unmonitor" {
 			mon.Unmonitor(fmt.Sprintf("%d", userID))
 
-			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Monitoring stopped.")); err != nil {
+			if _, err := bot.Send(tgbotapi.NewMessage(userID, "Monitoring stopped. Use /monitor to start again.")); err != nil {
 				log.Error("Failed to send message.", "error", err)
 			}
 

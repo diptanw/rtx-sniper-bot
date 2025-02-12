@@ -7,6 +7,7 @@ type (
 var (
 	ProductRTX5090 = Product("RTX 5090 FE")
 	ProductRTX5080 = Product("RTX 5080 FE")
+	ProductRTX4070 = Product("RTX 4070 FE")
 )
 
 func (p Product) SKU(c Country) string {
@@ -17,6 +18,8 @@ func (p Product) SKU(c Country) string {
 			return "1147624"
 		case ProductRTX5090:
 			return "1147625"
+		case ProductRTX4070:
+			return "99887"
 		}
 	case CountryDenmark:
 		switch p {

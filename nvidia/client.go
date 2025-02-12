@@ -14,6 +14,7 @@ type (
 	StockResponse struct {
 		ProductTitle       string `json:"productTitle"`
 		DirectPurchaseLink string `json:"directPurchaseLink"`
+		PurchaseLink       string `json:"purchaseLink"`
 		RetailerName       string `json:"retailerName"`
 		PartnerID          string `json:"partnerId"`
 		StoreID            string `json:"storeId"`

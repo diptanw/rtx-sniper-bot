@@ -148,7 +148,13 @@ func (m *Monitor) checkStock(ctx context.Context, sku sku) error {
 	for _, s := range stocks {
 		// Needs to be other than Nvidia partner and store.
 		if s.PartnerID != nvidiaID && s.StoreID != nvidiaStoreID {
-			links[s.RetailerName] = s.DirectPurchaseLink
+			purchaiseLink := s.DirectPurchaseLink
+
+			if purchaiseLink == "" {
+				purchaiseLink = s.PurchaseLink
+			}
+
+			links[s.RetailerName] = s.PurchaseLink
 		}
 	}
 
