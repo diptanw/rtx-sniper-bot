@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/diptanw/rtx-sniper-bot/async"
-	"github.com/diptanw/rtx-sniper-bot/monitor"
-	"github.com/diptanw/rtx-sniper-bot/nvidia"
-	"github.com/diptanw/rtx-sniper-bot/proxy"
-	"github.com/diptanw/rtx-sniper-bot/storage"
+	"github.com/dyptan-io/rtx-sniper-bot/async"
+	"github.com/dyptan-io/rtx-sniper-bot/monitor"
+	"github.com/dyptan-io/rtx-sniper-bot/nvidia"
+	"github.com/dyptan-io/rtx-sniper-bot/proxy"
+	"github.com/dyptan-io/rtx-sniper-bot/storage"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )

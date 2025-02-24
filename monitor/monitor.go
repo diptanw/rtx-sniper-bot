@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/diptanw/rtx-sniper-bot/async"
-	"github.com/diptanw/rtx-sniper-bot/nvidia"
-	"github.com/diptanw/rtx-sniper-bot/storage"
+	"github.com/dyptan-io/rtx-sniper-bot/async"
+	"github.com/dyptan-io/rtx-sniper-bot/nvidia"
+	"github.com/dyptan-io/rtx-sniper-bot/storage"
 )
 
 var ErrNotAvailable = errors.New("product not available")
@@ -165,7 +165,7 @@ func (m *Monitor) checkStock(ctx context.Context, sku sku) error {
 	for _, userID := range sku.users {
 		m.notCh <- Notification{
 			UserID:  userID,
-			Message: "Product " + sku.prod.String() + " is now available! Use /monitor to subscribe again.",
+			Message: "Product " + sku.prod.String() + " is now available! Unsubscribed, use /monitor to subscribe again.",
 			URLs:    links,
 		}
 

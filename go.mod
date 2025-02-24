@@ -1,4 +1,4 @@
-module github.com/diptanw/rtx-sniper-bot
+module github.com/dyptan-io/rtx-sniper-bot
 
 go 1.23.4
 
